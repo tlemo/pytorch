@@ -205,9 +205,16 @@ Module Module::clone_impl(
     IValue s = _ivalue()->getSlot(i);
     if (type()->getAttribute(i)->is_module()) {
       const Module& orig = Module(s.toObject());
+      auto& name = type()->getAttributeName(i);
+      auto& slotTy = type()->getAttribute(i);
       Module cloned = orig.clone_impl(type_remap, inplace, memo);
       type_remap[orig.type()] = cloned.type();
-      r.register_module(type()->getAttributeName(i), cloned);
+
+      // Use original InterfaceType instead of 'cloned.type()'.
+      if (slotTy->cast<InterfaceType>()) {
+        r.type()->addOrCheckAttribute(name, slotTy);
+      }
+      r.register_module(name, cloned);
     } else {
       // this adds new slot and creates a new attribute for the underlying type
       // if the type is not already cloned, otherwise it will only add a new

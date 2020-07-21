@@ -14,8 +14,11 @@ namespace {
 
 class AttributePropagator {
  public:
-  AttributePropagator(Module& module, std::vector<std::string>& preservedAttrs)
-      : module_(module) {
+  AttributePropagator(
+      Module& module,
+      std::vector<std::string>& preservedAttrs,
+      bool ignoreInterfaces)
+      : module_(module), ignoreInterfaces_(ignoreInterfaces) {
     // Currently only top level attributes and functions can  be preserved
     // explicitly.
     auto checkName = [this](std::string& name) {
@@ -199,10 +202,15 @@ class AttributePropagator {
         if (n->kind() == prim::SetAttr || n->kind() == prim::GetAttr) {
           // TODO: handle interface attributes. For now, Exit if Module uses
           // interface attributes
-          if (n->kind() == prim::GetAttr) {
-            TORCH_CHECK(
-                !n->output()->type()->cast<InterfaceType>(),
-                "attempted to freeze a module that uses interface attributes");
+          if (n->kind() == prim::GetAttr &&
+              n->output()->type()->cast<InterfaceType>()) {
+            if (ignoreInterfaces_) {
+              continue;
+            } else {
+              TORCH_CHECK(
+                  false,
+                  "attempted to freeze a module that uses interface attributes");
+            }
           }
           auto name = n->s(attr::name);
           auto attrModule = module_;
@@ -560,6 +568,9 @@ class AttributePropagator {
 
   Module& module_;
 
+  // Allow to freeze modules containing interfaces.
+  bool ignoreInterfaces_;
+
   // Contains the attributes names (e.g. {"self", "subModule", "a"}
   std::deque<std::string> names_;
 }; // class AttributePropagator
@@ -567,7 +578,8 @@ class AttributePropagator {
 
 Module freeze_module(
     const Module& module,
-    std::vector<std::string> preservedAttrs) {
+    std::vector<std::string> preservedAttrs,
+    bool ignoreInterfaces) {
   // Currently freezing module is supported only in eval mode.
   // If assertion below is commented and module is in training mode then this
   // implementation folds attributes correctly. Tensor attributes with
@@ -588,7 +600,8 @@ Module freeze_module(
   }
 
   auto moduleClone = module.clone(true);
-  AttributePropagator attrPropagator(moduleClone, preservedAttrs);
+  AttributePropagator attrPropagator(
+      moduleClone, preservedAttrs, ignoreInterfaces);
   attrPropagator.run();
   return moduleClone;
 }

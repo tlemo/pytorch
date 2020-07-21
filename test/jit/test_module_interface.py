@@ -453,6 +453,9 @@ class TestModuleInterface(JitTestCase):
         m.eval()
         with self.assertRaisesRegex(RuntimeError, "attempted to freeze a module that uses interface attributes"):
             mf = torch._C._freeze_module(m._c)
+        # Assume interface has no aliasing
+        mf = torch._C._freeze_module(m._c, ignoreInterfaces = True)
+
 
     def test_module_apis_interface(self):
         @torch.jit.interface
