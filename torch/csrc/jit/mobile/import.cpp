@@ -27,7 +27,8 @@
 //      ('operators', (('aten::Int', 'Tensor'),)),
 //      ('constants', ()),
 //      ('types', ()),
-//      ('register_size', 2))))
+//      ('register_size', 2)
+//      ('module_debug_info', (top(A).foo(B).forward)))))
 
 // Note that currently the backward compatibility is not supported by bytecode.
 // This format and process need to be revisted and redesigned if we want to
@@ -125,10 +126,27 @@ void parseMethods(
             ->elements();
     const auto& types_list =
         expect_field(table, "types", BYTECODE_INDEX_TYPE).toTuple()->elements();
-    const auto& register_size = expect_field(table, "register_size", 4).toInt();
+    const auto& register_size =
+        expect_field(table, "register_size", BYTECODE_INDEX_REGISTER_SIZE)
+            .toInt();
 
-    for (const auto& ins : ins_list) {
-      auto ins_item = ins.toTuple()->elements();
+    std::vector<IValue> module_debug_info_list;
+    bool hasDebugInfo =
+        table.toTuple()->elements().size() > BYTECODE_INDEX_MODULE_DEBUG_INFO;
+    if (hasDebugInfo) {
+      module_debug_info_list =
+          expect_field(
+              table, "module_debug_info", BYTECODE_INDEX_MODULE_DEBUG_INFO)
+              .toTuple()
+              ->elements();
+      TORCH_CHECK(
+          module_debug_info_list.size() == ops_list.size(),
+          "The numbers of operators and module info strings do not match.");
+    }
+
+    function->set_module_debug_info_list_size(ins_list.size());
+    for (size_t i = 0; i < ins_list.size(); ++i) {
+      auto ins_item = ins_list[i].toTuple()->elements();
       TORCH_CHECK(
           ins_item.size() == 3,
           "There should be three parts in an instruction. The function name is ",
@@ -137,6 +155,12 @@ void parseMethods(
       int X = ins_item[1].toInt();
       int N = ins_item[2].toInt();
       function->append_instruction(op_code, X, N);
+      if (op_code == OP) {
+        std::string module_debug_info = (hasDebugInfo)
+            ? module_debug_info_list[X].toString()->string()
+            : "";
+        function->append_module_info(module_debug_info, i);
+      }
     }
 
     std::unordered_set<std::string> unsupported_op_names;
